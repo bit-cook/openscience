@@ -713,6 +713,16 @@ export namespace OpenScience {
     return session
   }
 
+  /** Write a file atomically (temp + rename) so a crash mid-write can never
+   *  leave a torn file — a torn synced-env.json silently drops managed keys, and
+   *  a torn openscience-synced.json throws during config load and bricks the CLI
+   *  until it's removed by hand. */
+  async function atomicWrite(filepath: string, content: string, options?: { mode?: number }): Promise<void> {
+    const tmp = `${filepath}.${process.pid}.tmp`
+    await Bun.write(tmp, content, options)
+    await fs.rename(tmp, filepath)
+  }
+
   /** Fetch all connected service credentials and inject as env vars */
   export async function syncServices(): Promise<{
     user: SyncResponse["user"]
@@ -791,12 +801,25 @@ export namespace OpenScience {
       }
       syncedSecretValues.clear()
       for (const [key, value] of fresh.entries()) {
-        try {
-          Env.set(key, value)
-        } catch {
-          /* Instance not initialized */
+        // Respect precedence: never clobber a user's own shell export or BYOK
+        // value. Only write the synced value when the slot is empty or already
+        // holds a previously-synced value — mirroring preload-env.ts's "shell
+        // exports win". Without this, a background sync could overwrite an
+        // exported ANTHROPIC_API_KEY with a managed thk_ key mid-session,
+        // silently turning a free BYOK call into a billed managed one.
+        const current = process.env[key]
+        const ownsSlot = !current || previous.get(key) === current || current === value
+        if (ownsSlot) {
+          try {
+            Env.set(key, value)
+          } catch {
+            /* Instance not initialized */
+          }
+          process.env[key] = value
         }
-        process.env[key] = value
+        // Track the synced value regardless (for redaction + later cleanup). A
+        // shadowing shell export is left untouched by the unset pass above, which
+        // only removes a var whose live value still equals the synced one.
         syncedSecretValues.set(key, value)
       }
 
@@ -805,7 +828,7 @@ export namespace OpenScience {
         try {
           const managedDir = getSyncedConfigDir()
           await fs.mkdir(managedDir, { recursive: true })
-          await Bun.write(
+          await atomicWrite(
             path.join(managedDir, "openscience-synced.json"),
             JSON.stringify({ $schema: "https://syntheticsciences.ai/config.json", ...data.config }, null, 2),
             { mode: 0o600 },
@@ -828,7 +851,9 @@ export namespace OpenScience {
         for (const [k, v] of fresh.entries()) {
           envSnapshot[k] = v
         }
-        await Bun.write(path.join(managedDir, "synced-env.json"), JSON.stringify(envSnapshot, null, 2), { mode: 0o600 })
+        await atomicWrite(path.join(managedDir, "synced-env.json"), JSON.stringify(envSnapshot, null, 2), {
+          mode: 0o600,
+        })
       } catch (e) {
         log.warn("failed to persist synced env", { error: e instanceof Error ? e.message : String(e) })
       }

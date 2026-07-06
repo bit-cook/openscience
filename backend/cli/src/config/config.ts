@@ -187,10 +187,17 @@ export namespace Config {
       }
     }
 
-    // Load synced config from dashboard (highest priority after managed)
-    // Written by OpenScience.syncServices() to user's XDG config dir
+    // Load synced config from dashboard (highest priority after managed).
+    // Written by OpenScience.syncServices() to the user's XDG config dir. Tolerate
+    // a corrupt file: it must never brick config load (and thus the whole CLI).
+    // Atomic writes prevent torn files going forward; this covers external
+    // corruption or a file written by an older, non-atomic version.
     const syncedConfig = path.join(Global.Path.config, "openscience-synced.json")
-    result = mergeConfigConcatArrays(result, await loadFile(syncedConfig))
+    try {
+      result = mergeConfigConcatArrays(result, await loadFile(syncedConfig))
+    } catch {
+      // treat an unreadable synced config as absent
+    }
 
     // Migrate deprecated mode field to agent field
     for (const [name, mode] of Object.entries(result.mode ?? {})) {
