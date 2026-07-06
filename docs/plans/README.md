@@ -24,6 +24,14 @@ Nothing irreversible ships without owner sign-off — **sandboxing (10) is desig
 
 Status: 🔎 exploring · 📝 plan drafted · 🚧 implementing · ✅ done · ⛔ blocked on owner decision.
 
+## Landed so far (implementation)
+
+- **Urgent hang fix** — every Atlas call (bridge + client) is now timeout-bounded, so `openscience project init` (run every session by the research prompt) and the per-command sync probe can't wedge a session for 60 min.
+- **WS1 — CI determinism ✅** — tests seed a committed models.dev catalog fixture (zero network); the live delisting check moved to a nightly `catalog.yml` job. **855 pass / 0 fail**, deterministic. (Coverage — WS1-B — grows alongside each feature workstream.)
+- **WS2 — Codex login 🚧** — hardened the OAuth flow (HTTP timeouts, port-in-use fallback, device-poll deadline, refresh that retries transient 5xx but only says "reconnect" on a real 4xx), clean error surfacing + headless device fallback, and made **"Sign in with ChatGPT (Codex)" a first-class option in the wizard picker** (it was previously unreachable there). Remaining: the managed-proxy P0 — the backend actually *consuming* the pushed Codex tokens — needs the token-owner decision.
+
+Next: WS3 (sync billing-flip + atomic writes).
+
 ## Notes at kickoff
 
 - **CI is already green** on `main` — the previously-flaky live-catalog tests were fixed by #91/#92. Workstream 1 is now hardening + coverage on the paths this sprint touches, not firefighting.
