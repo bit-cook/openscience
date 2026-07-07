@@ -87,7 +87,10 @@ export const LocalModelsRoutes = lazy(() =>
         const models = await LocalProvider.probe(preset.baseURL, preset.apiKey)
         if (models) return c.json({ id, running: true, started: true, models })
       }
-      return c.json({ id, running: false, started: true, error: "started but the endpoint didn't respond in time" }, 200)
+      return c.json(
+        { id, running: false, started: true, error: "started but the endpoint didn't respond in time" },
+        200,
+      )
     })
 
     // Probe the well-known runtimes and report which are running + their models.
