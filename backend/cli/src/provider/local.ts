@@ -161,11 +161,12 @@ export namespace LocalProvider {
   export async function listModels(
     baseURL: string,
     apiKey?: string,
-    opts?: { signal?: AbortSignal; timeoutMs?: number },
+    opts?: { signal?: AbortSignal; timeoutMs?: number; fetchImpl?: typeof fetch },
   ): Promise<string[]> {
     const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 4000)
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
-    const res = await fetch(modelsEndpoint(baseURL), {
+    const doFetch = opts?.fetchImpl ?? fetch
+    const res = await doFetch(modelsEndpoint(baseURL), {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
       signal,
     })
@@ -175,9 +176,14 @@ export namespace LocalProvider {
 
   /** Best-effort probe: the models a reachable endpoint exposes, or null when it
    *  can't be reached / returns an error (used for auto-detection). */
-  export async function probe(baseURL: string, apiKey?: string, timeoutMs = 1500): Promise<string[] | null> {
+  export async function probe(
+    baseURL: string,
+    apiKey?: string,
+    timeoutMs = 1500,
+    fetchImpl?: typeof fetch,
+  ): Promise<string[] | null> {
     try {
-      return await listModels(baseURL, apiKey, { timeoutMs })
+      return await listModels(baseURL, apiKey, { timeoutMs, fetchImpl })
     } catch {
       return null
     }

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { LocalProvider } from "../../src/provider/local"
 
 describe("LocalProvider.normalizeBaseURL", () => {
@@ -75,32 +75,27 @@ describe("LocalProvider.buildProviderConfig", () => {
   })
 })
 
-describe("LocalProvider.listModels (injected fetch)", () => {
-  const realFetch = globalThis.fetch
-  afterEach(() => {
-    globalThis.fetch = realFetch
-  })
-
+describe("LocalProvider.listModels (injected fetch — no global mutation)", () => {
   test("hits <baseURL>/models and parses the response", async () => {
     let calledUrl = ""
-    globalThis.fetch = (async (url: any) => {
+    const fetchImpl = (async (url: any) => {
       calledUrl = String(url)
       return Response.json({ data: [{ id: "llama3.1" }] })
     }) as unknown as typeof fetch
-    const models = await LocalProvider.listModels("http://localhost:11434/v1")
+    const models = await LocalProvider.listModels("http://localhost:11434/v1", undefined, { fetchImpl })
     expect(calledUrl).toBe("http://localhost:11434/v1/models")
     expect(models).toEqual(["llama3.1"])
   })
 
   test("probe() returns null when the endpoint is unreachable", async () => {
-    globalThis.fetch = (async () => {
+    const fetchImpl = (async () => {
       throw new Error("ECONNREFUSED")
     }) as unknown as typeof fetch
-    expect(await LocalProvider.probe("http://localhost:11434/v1", undefined, 50)).toBeNull()
+    expect(await LocalProvider.probe("http://localhost:11434/v1", undefined, 50, fetchImpl)).toBeNull()
   })
 
   test("probe() returns null on a non-2xx", async () => {
-    globalThis.fetch = (async () => new Response("nope", { status: 404 })) as unknown as typeof fetch
-    expect(await LocalProvider.probe("http://localhost:1234/v1", undefined, 50)).toBeNull()
+    const fetchImpl = (async () => new Response("nope", { status: 404 })) as unknown as typeof fetch
+    expect(await LocalProvider.probe("http://localhost:1234/v1", undefined, 50, fetchImpl)).toBeNull()
   })
 })
