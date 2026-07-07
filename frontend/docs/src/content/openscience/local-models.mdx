@@ -58,7 +58,13 @@ openscience local add --url http://localhost:1234/v1 --id lmstudio --model qwen2
 
 ## From the workspace GUI
 
-Open **Settings → Local models**, choose a runtime (or enter a custom URL), and OpenScience discovers and adds the models. It's the same flow as the CLI, backed by your config.
+Open **Settings → Local models**. You get three ways in, no terminal required:
+
+- **Run a model locally** — for a detected runtime (Ollama, LM Studio), click **start** and OpenScience launches the server for you (`ollama serve`), waits for it, and adds its models. If the runtime isn't installed, the button links to its installer.
+- **Pull a model** — type a model name and hit **pull in terminal**; OpenScience opens the workspace terminal running `ollama pull <name>` so you can watch the download.
+- **Custom endpoint** — paste any `http://host:port/v1`, list its models, and pick which to add.
+
+Prefer to drive it from the **terminal on the right**? The panel's shortcuts open a terminal tab running the command; or just run `ollama serve` / `ollama pull <model>` there yourself — OpenScience detects the running server automatically.
 
 ## By hand (config)
 
