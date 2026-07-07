@@ -115,4 +115,79 @@ export namespace LocalProvider {
     }
     return [...ids].sort((a, b) => a.localeCompare(b))
   }
+
+  /** Fetch the model ids a running endpoint exposes via `GET <baseURL>/models`.
+   *  Throws on a network error or non-2xx so callers can distinguish "not
+   *  running" from "running but empty". */
+  export async function listModels(
+    baseURL: string,
+    apiKey?: string,
+    opts?: { signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<string[]> {
+    const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 4000)
+    const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+    const res = await fetch(modelsEndpoint(baseURL), {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${modelsEndpoint(baseURL)}`)
+    return parseModelsResponse(await res.json())
+  }
+
+  /** Best-effort probe: the models a reachable endpoint exposes, or null when it
+   *  can't be reached / returns an error (used for auto-detection). */
+  export async function probe(baseURL: string, apiKey?: string, timeoutMs = 1500): Promise<string[] | null> {
+    try {
+      return await listModels(baseURL, apiKey, { timeoutMs })
+    } catch {
+      return null
+    }
+  }
+
+  export interface Detected {
+    preset: Preset
+    models: string[]
+  }
+
+  /** Probe all known local runtimes in parallel and return those that are up and
+   *  serving at least one model. */
+  export async function detect(): Promise<Detected[]> {
+    const results = await Promise.all(
+      PRESETS.map(async (preset) => ({ preset, models: await probe(preset.baseURL, preset.apiKey) })),
+    )
+    return results.filter((r): r is Detected => Array.isArray(r.models) && r.models.length > 0)
+  }
+
+  /** Build the `openscience.json` → `provider.<id>` block for a local endpoint.
+   *  Uses `@ai-sdk/openai-compatible`, pins the baseURL + a throwaway key, and
+   *  registers each model at zero cost (local inference is free / never metered).
+   *  Conservative capability + limit defaults; the user can refine per-model. */
+  export function buildProviderConfig(input: {
+    name: string
+    baseURL: string
+    apiKey?: string
+    models: string[]
+    /** Per-model context window; local models vary widely, 32k is a safe default. */
+    contextLimit?: number
+    outputLimit?: number
+  }): Record<string, unknown> {
+    const models: Record<string, unknown> = {}
+    for (const id of input.models) {
+      models[id] = {
+        name: id,
+        tool_call: true,
+        reasoning: false,
+        temperature: true,
+        cost: { input: 0, output: 0 },
+        limit: { context: input.contextLimit ?? 32_768, output: input.outputLimit ?? 8_192 },
+      }
+    }
+    return {
+      name: input.name,
+      npm: NPM,
+      api: input.baseURL,
+      options: { baseURL: input.baseURL, apiKey: input.apiKey || DEFAULT_API_KEY },
+      models,
+    }
+  }
 }
