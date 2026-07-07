@@ -903,7 +903,8 @@ export namespace Provider {
     )
 
     function isProviderAllowed(providerID: string): boolean {
-      if (managedOpenRouterOnly && !managedProviderAllowed(providerID) && !localProviderIds.has(providerID)) return false
+      if (managedOpenRouterOnly && !managedProviderAllowed(providerID) && !localProviderIds.has(providerID))
+        return false
       if (enabled && !enabled.has(providerID)) return false
       if (disabled.has(providerID)) return false
       return true
