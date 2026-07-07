@@ -149,6 +149,7 @@ type SyncedServiceReason =
   | "ineligible_plan"
   | "proxy_disabled"
   | "managed_key_unconfigured"
+  | "managed_via_openrouter"
 
 interface SyncedService {
   connected: boolean
@@ -192,6 +193,8 @@ function describeReason(provider: string, reason: SyncedServiceReason | undefine
       return `${provider}: Atlas managed mode is disabled on this deployment — BYOK only.`
     case "managed_key_unconfigured":
       return `${provider}: Atlas managed mode unavailable on this deployment — ask the admin.`
+    case "managed_via_openrouter":
+      return `${provider}: wallet access to ${provider} models routes through the openrouter provider — pick them there, or add your own ${provider} key for direct access.`
     default:
       return `${provider}: not connected.`
   }
