@@ -33,6 +33,63 @@ export const LocalModelsRoutes = lazy(() =>
     // Configured local providers.
     .get("/", async (c) => c.json({ providers: await configuredLocals(), presets: LocalProvider.PRESETS }))
 
+    // Auto-startable runtimes: is the CLI installed, and is it already running?
+    .get("/status", async (c) => {
+      const runtimes = await Promise.all(
+        Object.entries(LocalProvider.RUNTIME_COMMANDS).map(async ([id, cmd]) => {
+          const preset = LocalProvider.PRESETS.find((p) => p.id === id)
+          const installed = !!Bun.which(cmd.bin)
+          const models = preset ? await LocalProvider.probe(preset.baseURL, preset.apiKey) : null
+          return {
+            id,
+            name: preset?.name ?? id,
+            baseURL: preset?.baseURL,
+            installed,
+            running: Array.isArray(models),
+            models: models ?? [],
+            install: cmd.install,
+            serveHint: cmd.serveHint,
+          }
+        }),
+      )
+      return c.json({ runtimes })
+    })
+
+    // Start (host) a runtime's server for the user, then wait until it responds.
+    .post("/start", validator("json", z.object({ id: z.string() })), async (c) => {
+      const { id } = c.req.valid("json")
+      const cmd = LocalProvider.RUNTIME_COMMANDS[id]
+      const preset = LocalProvider.PRESETS.find((p) => p.id === id)
+      if (!cmd || !preset) return c.json({ error: `Unknown or non-startable runtime: ${id}` }, 400)
+
+      // Already up? Just report the models.
+      const already = await LocalProvider.probe(preset.baseURL, preset.apiKey)
+      if (already) return c.json({ id, running: true, alreadyRunning: true, models: already })
+
+      if (!Bun.which(cmd.bin)) {
+        return c.json({ id, running: false, installed: false, install: cmd.install }, 200)
+      }
+
+      try {
+        // Detached background server — unref so it outlives / doesn't block this
+        // request and never keeps the openscience server alive on shutdown.
+        const proc = Bun.spawn([cmd.bin, ...cmd.serve], { stdout: "ignore", stderr: "ignore", stdin: "ignore" })
+        proc.unref?.()
+        log.info("started local runtime", { id, bin: cmd.bin })
+      } catch (e) {
+        return c.json({ id, running: false, error: e instanceof Error ? e.message : String(e) }, 200)
+      }
+
+      // Poll until the OpenAI endpoint answers (server takes a moment to bind).
+      const deadline = Date.now() + 15_000
+      while (Date.now() < deadline) {
+        await Bun.sleep(500)
+        const models = await LocalProvider.probe(preset.baseURL, preset.apiKey)
+        if (models) return c.json({ id, running: true, started: true, models })
+      }
+      return c.json({ id, running: false, started: true, error: "started but the endpoint didn't respond in time" }, 200)
+    })
+
     // Probe the well-known runtimes and report which are running + their models.
     .get("/detect", async (c) => {
       const detected = await LocalProvider.detect().catch(() => [])
