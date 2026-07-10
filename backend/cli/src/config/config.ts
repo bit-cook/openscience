@@ -1156,6 +1156,32 @@ export namespace Config {
         .object({
           auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),
           prune: z.boolean().optional().describe("Enable pruning of old tool outputs (default: true)"),
+          threshold: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Compact when context exceeds this fraction of the model window (default: 0.75)"),
+          fallbackContext: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Assumed context window (tokens) when a provider reports 0 (default: 128000)"),
+          tailTurns: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Minimum recent turns kept verbatim during compaction (default: 2)"),
+          tailTokens: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe(
+              "Token budget for the verbatim recent tail during compaction (default: clamp(0.20*usable, 8000, 32000))",
+            ),
         })
         .optional(),
       experimental: z
