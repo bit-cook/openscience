@@ -310,6 +310,26 @@ export namespace SessionPrompt {
     // summary overhead alone already exceeds the 0.75 threshold.
     let compactionArmed = true
     const session = await Session.get(sessionID)
+    // Text doom-loop guard (#176): weak/local models sometimes emit a near-identical
+    // "continuity summary" turn over and over instead of converging on an answer.
+    // The processor's doom-loop guard can't catch it — the TOOL calls vary (or are
+    // absent), only the TEXT repeats. Normalize an assistant turn's own text and
+    // compare recent turns by shared leading content.
+    const MIN_LOOP_TEXT = 400
+    const turnText = (m: MessageV2.WithParts) =>
+      m.parts
+        .filter((p) => p.type === "text" && !p.synthetic && !p.ignored)
+        .map((p) => (p as MessageV2.TextPart).text)
+        .join("\n")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim()
+    const sharedPrefix = (a: string, b: string) => {
+      const n = Math.min(a.length, b.length)
+      let i = 0
+      while (i < n && a[i] === b[i]) i++
+      return i
+    }
     while (true) {
       SessionStatus.set(sessionID, { type: "busy" })
       log.info("loop", { step, sessionID })
@@ -401,6 +421,29 @@ export namespace SessionPrompt {
           RSITrajectory.pipeline(sessionID).catch(() => {})
         }
         break
+      }
+
+      // Trip the text doom-loop guard when the last 3 finished assistant turns are
+      // long AND share a large identical leading block (the repeated "continuity
+      // summary"). Conservative on purpose — 3 substantial near-identical turns in a
+      // row is a clear non-convergence signal that legitimate progress never produces.
+      const finishedTurns = msgs.filter((m) => m.info.role === "assistant" && m.info.finish)
+      if (finishedTurns.length >= 3) {
+        const [t1, t2, t3] = finishedTurns.slice(-3).map(turnText)
+        const lengths = [t1.length, t2.length, t3.length]
+        const ratio = Math.max(...lengths) / Math.max(1, Math.min(...lengths))
+        if (
+          Math.min(...lengths) >= MIN_LOOP_TEXT &&
+          ratio <= 1.25 &&
+          sharedPrefix(t1, t2) >= 300 &&
+          sharedPrefix(t2, t3) >= 300
+        ) {
+          log.info("text doom-loop detected — stopping", { sessionID, step })
+          await failTooLarge(
+            "The model repeated nearly the same response several times without making progress — a known failure mode of smaller local models on multi-step research tasks. Stopping to avoid an endless loop. Try a larger or hosted model for this task, or break it into smaller steps.",
+          )
+          break
+        }
       }
 
       step++
